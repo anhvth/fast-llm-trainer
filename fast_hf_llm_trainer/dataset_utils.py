@@ -14,11 +14,11 @@ IGNORE_TOKEN_ID = LabelSmoother.ignore_index
 # TEMPLATE = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content']}}{% if loop.last %}{{ '<|im_end|>'}}{% else %}{{ '<|im_end|>\n' }}{% endif %}{% endfor %}"
 # TEMPLATE = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{% endif %}{% if loop.last %}{% else %}{% endif %}{% endfor %}"
 TEMPLATE = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
-def format_input_messages(
+def preprocess_chatlm_to_tokens(
     messages:List[dict[str,str]],
     tokenizer: transformers.PreTrainedTokenizer,
     max_len: int = None,
-    target_loss_only=False,
+    target_with_assistant=True,
 ) -> Dict:
     """
     Formats input messages for training a language model.
@@ -36,6 +36,7 @@ def format_input_messages(
         AssertionError: If the tokenizer does not have the pad_token_id attribute.
 
     """
+    assert messages[0]['role'] in ['system', 'user'], "First message must be system or user"
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
     if tokenizer.chat_template is None:
@@ -45,25 +46,24 @@ def format_input_messages(
     target_ids = []
 
     input_id = []
-    target_id = []
+    target_with_assistant = []
     for i in range(len(messages)):
         _ids = tokenizer.apply_chat_template(
             [messages[i]], tokenize=True, add_special_tokens=False, chat_template=TEMPLATE)
         input_id += _ids
-        if target_loss_only:
-            if messages[i]['role'] == 'assistant':
-                target_id += _ids
-            else:
-                target_id += [IGNORE_TOKEN_ID]*len(_ids)
+
+        if messages[i]['role'] == 'assistant':
+            target_with_assistant += _ids
         else:
-            target_id += _ids
+            target_with_assistant += [IGNORE_TOKEN_ID]*len(_ids)
+
 
     # maxlen
     input_id = input_id[:max_len]
-    target_id = target_id[:max_len]
+    target_with_assistant = target_with_assistant[:max_len]
     # to tensor
     input_ids = torch.tensor([input_id], dtype=torch.long)
-    target_ids = torch.tensor([target_id], dtype=torch.long)
+    target_ids = torch.tensor([target_with_assistant], dtype=torch.long)
     attention_mask = input_ids.ne(tokenizer.pad_token_id)
     return dict(
         input_ids=input_ids, target_ids=target_ids, attention_mask=attention_mask, labels=target_ids,
@@ -140,7 +140,7 @@ def create_batches_with_split_points(item_metas, max_length):
 
     return batches_with_split_points
 
-def create_chunks_with_train_tokens(item_metas, max_length, num_gpus, accumulate_steps, target_loss_only=False):
+def create_chunks_with_train_tokens(item_metas, max_length, num_gpus, accumulate_steps, target_loss_only):
     """Create chunks with train tokens.
 
     This function creates chunks with train tokens based on the provided item metadata.
@@ -162,14 +162,9 @@ def create_chunks_with_train_tokens(item_metas, max_length, num_gpus, accumulate
             - 'loss_scale_factor' (float): The loss scale factor for the batch.
     """
     if target_loss_only:
-        assert 'num_train_token' in item_metas[0], 'num_train_token is required in item_metas when target_loss_only is True'
         idx_to_num_train_tokens = {item["idx"]: item["num_train_token"] for item in item_metas}
-    elif not 'num_train_token' in item_metas[0]:
-        logger.warning('num_train_token is not found in item_metas. Using length instead')
-        idx_to_num_train_tokens = {item["idx"]: item["length"] for item in item_metas}
     else:
-        assert 'num_train_token' in item_metas[0], 'num_train_token is required in item_metas when target_loss_only is False'
-        idx_to_num_train_tokens = {item["idx"]: item["num_train_token"] for item in item_metas}
+        idx_to_num_train_tokens = {item["idx"]: item["length"] for item in item_metas}
 
     batches_with_split_points = create_batches_with_split_points(item_metas, max_length)
 
