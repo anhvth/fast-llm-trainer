@@ -1,9 +1,0 @@
-setup.py
-fast_hf_llm_trainer/__init__.py
-fast_hf_llm_trainer/dataset_utils.py
-fast_hf_llm_trainer/trainer.py
-fast_llm_trainer.egg-info/PKG-INFO
-fast_llm_trainer.egg-info/SOURCES.txt
-fast_llm_trainer.egg-info/dependency_links.txt
-fast_llm_trainer.egg-info/requires.txt
-fast_llm_trainer.egg-info/top_level.txt
