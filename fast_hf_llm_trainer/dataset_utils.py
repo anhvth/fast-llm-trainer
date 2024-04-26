@@ -12,16 +12,34 @@ from loguru import logger
 IGNORE_TOKEN_ID = LabelSmoother.ignore_index
 
 # TEMPLATE = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content']}}{% if loop.last %}{{ '<|im_end|>'}}{% else %}{{ '<|im_end|>\n' }}{% endif %}{% endfor %}"
-TEMPLATE = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{% endif %}{% if loop.last %}{% else %}{% endif %}{% endfor %}"
-# TEMPLATE = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
+# TEMPLATE = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{% endif %}{% if loop.last %}{% else %}{% endif %}{% endfor %}"
+TEMPLATE = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
 def format_input_messages(
     messages:List[dict[str,str]],
     tokenizer: transformers.PreTrainedTokenizer,
     max_len: int = None,
     target_loss_only=False,
 ) -> Dict:
+    """
+    Formats input messages for training a language model.
+
+    Args:
+        messages (List[dict[str,str]]): List of dictionaries representing the input messages.
+        tokenizer (transformers.PreTrainedTokenizer): Tokenizer used to tokenize the messages.
+        max_len (int, optional): Maximum length of the input messages. Defaults to None.
+        target_loss_only (bool, optional): Whether to include only the target loss in the output. Defaults to False.
+
+    Returns:
+        Dict: A dictionary containing the formatted input messages, including input_ids, target_ids, attention_mask, labels, length, and num_train_tokens.
+
+    Raises:
+        AssertionError: If the tokenizer does not have the pad_token_id attribute.
+
+    """
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
+    if tokenizer.chat_template is None:
+        tokenizer.chat_template = TEMPLATE
     assert hasattr(tokenizer, 'pad_token_id'), "Tokenizer must have pad_token_id attribute"
     input_ids = []
     target_ids = []
@@ -30,12 +48,15 @@ def format_input_messages(
     target_id = []
     for i in range(len(messages)):
         _ids = tokenizer.apply_chat_template(
-            [messages[i]], tokenize=True, add_special_tokens=False)
+            [messages[i]], tokenize=True, add_special_tokens=False, chat_template=TEMPLATE)
         input_id += _ids
-        if target_loss_only and  messages[i]['role'] == 'assistant':
-            target_id += _ids
+        if target_loss_only:
+            if messages[i]['role'] == 'assistant':
+                target_id += _ids
+            else:
+                target_id += [IGNORE_TOKEN_ID]*len(_ids)
         else:
-            target_id += [IGNORE_TOKEN_ID]*len(_ids)
+            target_id += _ids
 
     # maxlen
     input_id = input_id[:max_len]
@@ -46,7 +67,7 @@ def format_input_messages(
     attention_mask = input_ids.ne(tokenizer.pad_token_id)
     return dict(
         input_ids=input_ids, target_ids=target_ids, attention_mask=attention_mask, labels=target_ids,
-        length=len(input_ids),
+        length=len(input_id),
         num_train_tokens=target_ids.ne(IGNORE_TOKEN_ID).sum().item(),
     )
 def group_batches_by_sequence_length(items, bz, shuffle=True, drop_last=True):
