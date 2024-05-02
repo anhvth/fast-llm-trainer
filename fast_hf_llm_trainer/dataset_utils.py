@@ -49,7 +49,7 @@ def preprocess_chatlm_to_tokens(
     target_with_assistant = []
     for i in range(len(messages)):
         _ids = tokenizer.apply_chat_template(
-            [messages[i]], tokenize=True, add_special_tokens=False, chat_template=TEMPLATE)
+            [messages[i]], tokenize=True, add_special_tokens=False)
         input_id += _ids
 
         if messages[i]['role'] == 'assistant':

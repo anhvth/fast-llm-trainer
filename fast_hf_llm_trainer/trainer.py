@@ -88,6 +88,10 @@ class DynamicBatchingTrainer(transformers.Trainer):
         loss_scale_factor = inputs.pop("loss_scale_factor", 1)
         if not self.args.target_loss_only:
             inputs["labels"] = inputs["input_ids"].clone()
+            pad_id = self.tokenizer.pad_token_id
+            ids = inputs["labels"]==pad_id
+            inputs["labels"][ids] = -100
+            
         unscaled_loss = super().compute_loss(model, inputs, return_outputs)
         loss = unscaled_loss * loss_scale_factor
         self.prev_inputs = inputs
@@ -186,6 +190,6 @@ class DynamicbatchingDataset(Dataset):
         item["split_ids"] = split_ids
         item["loss_scale_factor"] = loss_scale_factor
         batch = collate_fn([item], self.pad_val, IGNORE_TOKEN_ID, False)
-        im_start_idx = self.dataset.tokenizer('<|im_start|>')['input_ids'][0]
-        assert batch['input_ids'][:,0].eq(im_start_idx).all(), f"invalide start token {batch['input_ids'][:,0]} != {im_start_idx}"
+        # im_start_idx = self.dataset.tokenizer('<|im_start|>')['input_ids'][0]
+        # assert batch['input_ids'][:,0].eq(im_start_idx).all(), f"invalide start token {batch['input_ids'][:,0]} != {im_start_idx}"
         return batch
