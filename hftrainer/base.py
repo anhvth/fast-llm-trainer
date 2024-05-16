@@ -17,6 +17,11 @@ from typing import Dict, Optional, List
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 import yaml
 
+from hftrainer.utils import rank0_log_info
+
+
+
+
 from .base_dataclasses import (
     DataArguments,
     LoraArguments,
@@ -26,6 +31,7 @@ from .base_dataclasses import (
 from datasets import load_dataset
 from transformers import PreTrainedTokenizer
 from datasets import Dataset
+
 
 def init_model(model_args, training_args, lora_args, device_map=None):
     compute_dtype = (
@@ -92,7 +98,7 @@ def init_model(model_args, training_args, lora_args, device_map=None):
 if os.getenv("JUPYTER") == "True":
     from speedy import imemoize
 
-    logger.info("Using imemoize in Jupyter notebook.")
+    rank0_log_info("Using imemoize in Jupyter notebook.")
     init_model = imemoize(init_model)
 
 
@@ -163,11 +169,11 @@ class BaseTrainer(Trainer):
         )
 
     def load_model(self):
-        logger.info("Loading model and tokenizer with provided arguments.")
+        rank0_log_info("Loading model and tokenizer with provided arguments.")
         self.model, self.tokenizer = init_model(
             self.model_args, self.training_args, self.lora_args
         )
-        logger.info("Model and tokenizer loaded successfully.")
+        rank0_log_info("Model and tokenizer loaded successfully.")
 
     def load_datasets(self):
         raise NotImplementedError(

@@ -22,18 +22,13 @@ from speedy import load_by_ext
 
 from loguru import logger
 
-
+from hftrainer.utils import rank0_log_info
 
 
 # from modeling.dynamic_batching_trainer import split_then_stack
 IGNORE_TOKEN_ID = -100
 RANK = int(os.environ.get("LOCAL_RANK") or 0)
 random.seed(42)
-
-
-def rank0_log_info(*args):
-    if RANK == 0:
-        logger.info(*args)
 
 
 @dataclass
@@ -120,11 +115,8 @@ class DynamicBatchingTrainer(BaseTrainer):
         return loss
 
     def load_datasets(self):
-        
 
-        data = load_by_ext(
-            self.data_args.data_path
-        )
+        data = load_by_ext(self.data_args.data_path)
         ds = LazySupervisedDataset(
             data, self.tokenizer, self.training_args.data_max_length
         )
@@ -326,5 +318,8 @@ class DynamicbatchingDataset(Dataset):
         item = self.__merge_dict(items)
         item["split_ids"] = split_ids
         item["loss_scale_factor"] = loss_scale_factor
-        batch = collate_fn([item], self.pad_val, IGNORE_TOKEN_ID, False)
-        return batch
+        try:
+            batch = collate_fn([item], self.pad_val, IGNORE_TOKEN_ID, False)
+            return batch
+        except RuntimeError as e:
+            return self.__getitem__(idx, counter + 1)
