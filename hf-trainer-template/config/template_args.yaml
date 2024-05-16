@@ -31,7 +31,7 @@ training_args:
   gradient_checkpointing: true
   bf16: true
   target_loss_only: true
-
+  deepspeed: deepspeed-configs/ds2.json
 lora_args:
   lora_r: 64
   lora_alpha: 16
