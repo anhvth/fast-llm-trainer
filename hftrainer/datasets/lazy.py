@@ -3,6 +3,7 @@ from typing import Dict, List, Any
 import torch
 import transformers
 from pydantic import BaseModel, validator
+from llm_utils import transform_messages_to_chatml
 
 IGNORE_TOKEN_ID = -100
 TEMPLATE = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ 'system\nYou are a helpful assistant.\n' }}{% endif %}{{'' + message['role'] + '\n' + message['content']}}{% if loop.last %}{{ ''}}{% else %}{{ '\n' }}{% endif %}{% endfor %}"
@@ -41,7 +42,7 @@ def default_preproc(
         target_ids=target_ids,
         attention_mask=attention_mask
     )
-from llm_utils import transform_messages_to_chatml
+
 class LazySupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
