@@ -1,4 +1,4 @@
-from hftrainer.trainer.datasets.lazy import LazySupervisedDataset
+from hftrainer.datasets.lazy import LazySupervisedDataset
 import transformers
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
@@ -16,15 +16,26 @@ from tqdm import tqdm
 import os.path as osp
 from copy import deepcopy
 from fast_hf_llm_trainer import create_chunks_with_train_tokens
+from hftrainer.base import BaseTrainer
+from llm_utils import load_chat_dataset
+from speedy import load_by_ext
+
+from loguru import logger
+
+
+
 
 # from modeling.dynamic_batching_trainer import split_then_stack
 IGNORE_TOKEN_ID = -100
 RANK = int(os.environ.get("LOCAL_RANK") or 0)
 random.seed(42)
 
-from speedy import load_by_ext, dump_json_or_pickle, setup_logger, logger
 
-# setup_logger('./logs')
+def rank0_log_info(*args):
+    if RANK == 0:
+        logger.info(*args)
+
+
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
     cache_dir: Optional[str] = field(default=None)
@@ -76,9 +87,6 @@ def collate_fn(
     return new_inputs
 
 
-from hftrainer.trainer.base import BaseTrainer
-
-
 class DynamicBatchingTrainer(BaseTrainer):
 
     def get_train_dataloader(self) -> DataLoader:
@@ -107,15 +115,15 @@ class DynamicBatchingTrainer(BaseTrainer):
             input_num_tokens = inputs["attention_mask"].sum().item()
             target_num_tokens = inputs["labels"].gt(0).sum().item()
             pretty_log = f"[RANK={RANK}] Step: {self.state.global_step}, Target Loss Only: {self.training_args.target_loss_only}, Input Tokens: {input_num_tokens}, Target Tokens: {target_num_tokens}, Loss: {loss.item():.4f}, Loss Scale Factor: {loss_scale_factor:.4f}"
-            logger.info(pretty_log)
+            rank0_log_info(pretty_log)
 
         return loss
 
     def load_datasets(self):
-        from llm_utils import load_chat_dataset
+        
 
         data = load_by_ext(
-            "/anhvth5/data/chat-formated-dataset/giaothong_ask_gemini_suports_or_neutral.json"
+            self.data_args.data_path
         )
         ds = LazySupervisedDataset(
             data, self.tokenizer, self.training_args.data_max_length
@@ -283,7 +291,7 @@ class DynamicbatchingDataset(Dataset):
             return lens, num_train_tokens
 
         lens, num_train_tokens = _get_lens()
-        logger.info(f"Finished getting lengths in {time.time()-t:.2f}s")
+        rank0_log_info(f"Finished getting lengths in {time.time()-t:.2f}s")
         item_metas = []
         for i, (l, n) in enumerate(zip(lens, num_train_tokens)):
             item_metas.append({"length": l, "num_train_token": n, "idx": i})
