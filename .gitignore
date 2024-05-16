@@ -1,3 +1,4 @@
 .hypothesis/
 fast_llm_trainer.egg-info
 **/__pycache__/
+fast_hf_llm_trainer/.ipynb_checkpoints/
