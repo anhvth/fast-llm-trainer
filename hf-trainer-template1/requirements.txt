@@ -1,0 +1,6 @@
+torch
+transformers
+deepspeed
+accelerate
+peft
+scikit-learn

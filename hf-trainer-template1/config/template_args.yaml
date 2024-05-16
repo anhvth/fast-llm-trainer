@@ -1,0 +1,49 @@
+model_args:
+  model_name_or_path: "Qwen/Qwen1.5-0.5B"
+
+data_args:
+  data_path: "../shepherd_data.pkl"
+  eval_data_path: null
+  lazy_preprocess: true
+
+training_args:
+  output_dir: "output/deepseek_for_process"
+  overwrite_output_dir: true
+  num_train_epochs: 18
+  per_device_train_batch_size: 64
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 1
+  evaluation_strategy: "epoch"
+  save_strategy: "epoch"
+  save_steps: 10
+  save_total_limit: 1
+  learning_rate: 0.00001
+  weight_decay: 0.01
+  adam_beta2: 0.95
+  warmup_ratio: 0.00
+  lr_scheduler_type: "cosine"
+  logging_steps: 1
+  report_to:
+    - "tensorboard"
+  model_max_length: 1024
+  data_max_length: 1024
+  use_lora: true
+  gradient_checkpointing: true
+  bf16: true
+  target_loss_only: true
+
+lora_args:
+  lora_r: 64
+  lora_alpha: 16
+  lora_dropout: 0.05
+  lora_target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "up_proj"
+    - "gate_proj"
+    - "down_proj"
+  lora_weight_path: ""
+  lora_bias: "none"
+  q_lora: true
