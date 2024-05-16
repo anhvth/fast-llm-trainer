@@ -24,7 +24,7 @@ random.seed(42)
 
 from speedy import load_by_ext, dump_json_or_pickle, setup_logger, logger
 
-setup_logger('./logs')
+# setup_logger('./logs')
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
     cache_dir: Optional[str] = field(default=None)
