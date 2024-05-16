@@ -17,7 +17,7 @@ from typing import Dict, Optional, List
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 import yaml
 
-from hftrainer.trainer.base_dataclasses import (
+from .base_dataclasses import (
     DataArguments,
     LoraArguments,
     ModelArguments,
@@ -26,7 +26,6 @@ from hftrainer.trainer.base_dataclasses import (
 from datasets import load_dataset
 from transformers import PreTrainedTokenizer
 from datasets import Dataset
-
 
 def init_model(model_args, training_args, lora_args, device_map=None):
     compute_dtype = (
