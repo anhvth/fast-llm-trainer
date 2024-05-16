@@ -164,11 +164,11 @@ class BaseTrainer(Trainer):
         )
 
     def load_model(self):
-        logger.debug("Loading model and tokenizer with provided arguments.")
+        logger.info("Loading model and tokenizer with provided arguments.")
         self.model, self.tokenizer = init_model(
             self.model_args, self.training_args, self.lora_args
         )
-        logger.debug("Model and tokenizer loaded successfully.")
+        logger.info("Model and tokenizer loaded successfully.")
 
     def load_datasets(self):
         raise NotImplementedError(

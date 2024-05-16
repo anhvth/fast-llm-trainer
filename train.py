@@ -1,6 +1,6 @@
-from speedy import load_by_ext, dump_json_or_pickle, setup_logger, logger
+from speedy import setup_logger, logger
 
-# setup_logger('./logs')
+setup_logger('./logs')
 import os
 from speedy import *
 from hftrainer.trainer.datasets import LazySupervisedDataset
