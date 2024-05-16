@@ -1,3 +1,4 @@
+from hftrainer.trainer.datasets.lazy import LazySupervisedDataset
 import transformers
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
@@ -20,10 +21,10 @@ from fast_hf_llm_trainer import create_chunks_with_train_tokens
 IGNORE_TOKEN_ID = -100
 RANK = int(os.environ.get("LOCAL_RANK") or 0)
 random.seed(42)
-from loguru import logger
-from speedy import load_by_ext, dump_json_or_pickle
 
+from speedy import load_by_ext, dump_json_or_pickle, setup_logger, logger
 
+setup_logger('./logs')
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
     cache_dir: Optional[str] = field(default=None)
@@ -93,7 +94,7 @@ class DynamicBatchingTrainer(BaseTrainer):
 
     def compute_loss(self, model, inputs, return_outputs=False):
         loss_scale_factor = inputs.pop("loss_scale_factor", 1)
-        if not self.args.target_loss_only:
+        if not self.training_args.target_loss_only:
             inputs["labels"] = inputs["input_ids"].clone()
             pad_id = self.tokenizer.pad_token_id
             ids = inputs["labels"] == pad_id
@@ -105,10 +106,22 @@ class DynamicBatchingTrainer(BaseTrainer):
         if self.state.global_step % 10 == 0:
             input_num_tokens = inputs["attention_mask"].sum().item()
             target_num_tokens = inputs["labels"].gt(0).sum().item()
-            pretty_log = f"[RANK={RANK}] Step: {self.state.global_step}, Target Loss Only: {self.args.target_loss_only}, Input Tokens: {input_num_tokens}, Target Tokens: {target_num_tokens}, Loss: {loss:.4f}, Loss Scale Factor: {loss_scale_factor:.4f}"
+            pretty_log = f"[RANK={RANK}] Step: {self.state.global_step}, Target Loss Only: {self.training_args.target_loss_only}, Input Tokens: {input_num_tokens}, Target Tokens: {target_num_tokens}, Loss: {loss.item():.4f}, Loss Scale Factor: {loss_scale_factor:.4f}"
             logger.info(pretty_log)
 
         return loss
+
+    def load_datasets(self):
+        from llm_utils import load_chat_dataset
+
+        data = load_by_ext(
+            "/anhvth5/data/chat-formated-dataset/giaothong_ask_gemini_suports_or_neutral.json"
+        )
+        ds = LazySupervisedDataset(
+            data, self.tokenizer, self.training_args.data_max_length
+        )
+        dataset = DynamicbatchingDataset(ds, "qwen", self.training_args)
+        return dataset, None  # train/val
 
 
 def split_then_stack(merged_ids, split_idxs, pad_value):
@@ -142,97 +155,99 @@ def split_then_stack(merged_ids, split_idxs, pad_value):
 class DynamicbatchingDataset(Dataset):
     """# DynamicbatchingDataset Class Documentation
 
-## Overview
-The `DynamicbatchingDataset` class is a custom dataset designed for dynamic batching, optimized for training with variable-length sequences using the Hugging Face `transformers` library. It organizes data into batches based on token lengths and handles the creation of these batches to optimize GPU utilization during training.
+    ## Overview
+    The `DynamicbatchingDataset` class is a custom dataset designed for dynamic batching, optimized for training with variable-length sequences using the Hugging Face `transformers` library. It organizes data into batches based on token lengths and handles the creation of these batches to optimize GPU utilization during training.
 
-## Initialization
-### `__init__(self, dataset, tokenizer_name: str, training_args: TrainingArguments)`
+    ## Initialization
+    ### `__init__(self, dataset, tokenizer_name: str, training_args: TrainingArguments)`
 
-#### Parameters:
-- `dataset`: The dataset to be batched, typically an instance of a Hugging Face Dataset object.
-- `tokenizer_name` (str): The name of the tokenizer used to tokenize the dataset.
-- `training_args` (TrainingArguments): The training arguments containing parameters such as maximum data length, batch size, and gradient accumulation steps.
+    #### Parameters:
+    - `dataset`: The dataset to be batched, typically an instance of a Hugging Face Dataset object.
+    - `tokenizer_name` (str): The name of the tokenizer used to tokenize the dataset.
+    - `training_args` (TrainingArguments): The training arguments containing parameters such as maximum data length, batch size, and gradient accumulation steps.
 
-#### Description:
-Initializes the `DynamicbatchingDataset` instance, setting up necessary parameters, computing token lengths for each item in the dataset, and creating batches based on these token lengths.
+    #### Description:
+    Initializes the `DynamicbatchingDataset` instance, setting up necessary parameters, computing token lengths for each item in the dataset, and creating batches based on these token lengths.
 
-## Methods
+    ## Methods
 
-### `compute_token_lengths(self, ds)`
+    ### `compute_token_lengths(self, ds)`
 
-#### Parameters:
-- `ds`: The dataset whose token lengths need to be computed.
+    #### Parameters:
+    - `ds`: The dataset whose token lengths need to be computed.
 
-#### Returns:
-- `item_metas` (List[Dict]): A list of dictionaries, each containing the length, number of training tokens, and index of each item in the dataset.
+    #### Returns:
+    - `item_metas` (List[Dict]): A list of dictionaries, each containing the length, number of training tokens, and index of each item in the dataset.
 
-#### Description:
-Computes the token lengths and the number of training tokens for each item in the dataset. This information is used to create batches that maximize GPU efficiency.
+    #### Description:
+    Computes the token lengths and the number of training tokens for each item in the dataset. This information is used to create batches that maximize GPU efficiency.
 
-### `__len__(self)`
+    ### `__len__(self)`
 
-#### Returns:
-- `length` (int): The number of batches created.
+    #### Returns:
+    - `length` (int): The number of batches created.
 
-#### Description:
-Returns the number of batches created based on the token lengths and batching strategy.
+    #### Description:
+    Returns the number of batches created based on the token lengths and batching strategy.
 
-### `__merge_dict(self, list_d)`
+    ### `__merge_dict(self, list_d)`
 
-#### Parameters:
-- `list_d` (List[Dict]): A list of dictionaries where each dictionary represents an item in the dataset.
+    #### Parameters:
+    - `list_d` (List[Dict]): A list of dictionaries where each dictionary represents an item in the dataset.
 
-#### Returns:
-- `ret_d` (Dict): A single dictionary with concatenated tensor values from the input list.
+    #### Returns:
+    - `ret_d` (Dict): A single dictionary with concatenated tensor values from the input list.
 
-#### Description:
-Merges a list of dictionaries into a single dictionary by concatenating the tensor values. This is used to prepare the items for batching.
+    #### Description:
+    Merges a list of dictionaries into a single dictionary by concatenating the tensor values. This is used to prepare the items for batching.
 
-### `__getitem__(self, idx, counter=0)`
+    ### `__getitem__(self, idx, counter=0)`
 
-#### Parameters:
-- `idx`: The index of the batch to retrieve.
-- `counter` (int, optional): A counter to prevent infinite retries (default is 0).
+    #### Parameters:
+    - `idx`: The index of the batch to retrieve.
+    - `counter` (int, optional): A counter to prevent infinite retries (default is 0).
 
-#### Returns:
-- `batch` (Dict): A batch of data prepared for training.
+    #### Returns:
+    - `batch` (Dict): A batch of data prepared for training.
 
-#### Description:
-Retrieves a batch of data based on the provided index. The method handles fetching the item IDs and split points for the batch, merging the items, and preparing the final batch using a custom collate function. If the method fails more than 10 times, it raises an exception to avoid infinite retries.
+    #### Description:
+    Retrieves a batch of data based on the provided index. The method handles fetching the item IDs and split points for the batch, merging the items, and preparing the final batch using a custom collate function. If the method fails more than 10 times, it raises an exception to avoid infinite retries.
 
-### Example Usage
+    ### Example Usage
 
-```python
-from transformers import TrainingArguments
+    ```python
+    from transformers import TrainingArguments
 
-# Assume `dataset` is a pre-loaded Hugging Face dataset and `tokenizer` is a pre-initialized tokenizer.
-training_args = TrainingArguments(
-    per_device_train_batch_size=8,
-    gradient_accumulation_steps=2,
-    data_max_length=512,
-    target_loss_only=True
-)
+    # Assume `dataset` is a pre-loaded Hugging Face dataset and `tokenizer` is a pre-initialized tokenizer.
+    training_args = TrainingArguments(
+        per_device_train_batch_size=8,
+        gradient_accumulation_steps=2,
+        data_max_length=512,
+        target_loss_only=True
+    )
 
-dynamic_dataset = DynamicbatchingDataset(
-    dataset=dataset,
-    tokenizer_name=tokenizer.name_or_path,
-    training_args=training_args
-)
+    dynamic_dataset = DynamicbatchingDataset(
+        dataset=dataset,
+        tokenizer_name=tokenizer.name_or_path,
+        training_args=training_args
+    )
 
-# Accessing a batch
-batch = dynamic_dataset[0]
-```
+    # Accessing a batch
+    batch = dynamic_dataset[0]
+    ```
 
-### Internal Methods
-- `__merge_dict(self, list_d)`: Merges a list of dictionaries into one by concatenating their tensor values.
-- `__getitem__(self, idx, counter=0)`: Retrieves and processes a batch of data for the given index.
+    ### Internal Methods
+    - `__merge_dict(self, list_d)`: Merges a list of dictionaries into one by concatenating their tensor values.
+    - `__getitem__(self, idx, counter=0)`: Retrieves and processes a batch of data for the given index.
 
-## Notes
-- The `compute_token_lengths` method is crucial for determining how the dataset is split into batches.
-- The class heavily relies on the `TrainingArguments` for configuring batch sizes, accumulation steps, and other training parameters.
-- The custom collate function, `collate_fn`, is used to handle padding and other preprocessing steps required for batching.
+    ## Notes
+    - The `compute_token_lengths` method is crucial for determining how the dataset is split into batches.
+    - The class heavily relies on the `TrainingArguments` for configuring batch sizes, accumulation steps, and other training parameters.
+    - The custom collate function, `collate_fn`, is used to handle padding and other preprocessing steps required for batching.
 
-By using this class, users can efficiently handle dynamic batching of variable-length sequences, improving the efficiency of training models on datasets with diverse sequence lengths."""
+    By using this class, users can efficiently handle dynamic batching of variable-length sequences, improving the efficiency of training models on datasets with diverse sequence lengths.
+    """
+
     def __init__(
         self,
         dataset,
@@ -268,7 +283,7 @@ By using this class, users can efficiently handle dynamic batching of variable-l
             return lens, num_train_tokens
 
         lens, num_train_tokens = _get_lens()
-        print(f"Finished getting lengths in {time.time()-t:.2f}s")
+        logger.info(f"Finished getting lengths in {time.time()-t:.2f}s")
         item_metas = []
         for i, (l, n) in enumerate(zip(lens, num_train_tokens)):
             item_metas.append({"length": l, "num_train_token": n, "idx": i})
