@@ -2,7 +2,7 @@ model_args:
   model_name_or_path: "Qwen/Qwen1.5-0.5B"
 
 data_args:
-  data_path: "../shepherd_data.pkl"
+  data_path: "/anhvth5/data/chat-formated-dataset/faq_select_gpt4_455_v2.json"
   eval_data_path: null
   lazy_preprocess: true
 
